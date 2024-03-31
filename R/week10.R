@@ -147,10 +147,6 @@ table1_tbl
 
 
 
-
-
-
-
 # More of my pain
 # model_test <- train(
   # work_hours~.,
