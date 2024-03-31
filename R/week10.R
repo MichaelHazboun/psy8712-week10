@@ -5,19 +5,20 @@ library(haven)
 library(janitor)
 library(caret)
 
+
 # Data Import and Cleaning
 gss_tbl<-read_sav(file="../data/GSS2016.sav") %>%
-  drop_na(MOSTHRS)%>%
+  drop_na(MOSTHRS)%>% # got rid of na's
   rename(work_hours=MOSTHRS) %>% #renaming it for my convenience and to minimize confusion
   select(-HRS1,
-         -HRS2,
-         -where(~mean(is.na(.))>0.75))%>%
-  sapply(as.numeric)%>%
+         -HRS2, # getting rid of undesired columns
+         -where(~mean(is.na(.))>0.75))%>% #Tried a bunch of different keeping the one with less than 75% missingness. This path made logical sense and worked, (figuring out the ~ was a pain though) 
+  sapply(as.numeric)%>% #nothing was working in the later section, saw that other people did this, tried it,then it worked
   as_tibble()
   
 
 # Visualization
-gss_tbl%>%
+gss_tbl%>% # don't think an explanation is really needed here.
   ggplot(aes(x=work_hours))+
   geom_histogram()
 
@@ -30,11 +31,14 @@ gss_tbl%>%
 
 
 
-random_data<-gss_tbl[sample(nrow(gss_tbl)),]
-training<- random_data[1:round(0.75*nrow(random_data)),]
-test <-random_data[(round(0.75*nrow(random_data))+1):nrow(random_data),] 
-fold_indices <- createFolds(training$work_hours, 10)
-Methods <- c("lm","glmnet","ranger","xgbLinear")
+random_data<-gss_tbl[sample(nrow(gss_tbl)),] #randomising the data
+
+training<- random_data[1:round(0.75*nrow(random_data)),] #splitting the data
+test <-random_data[(round(0.75*nrow(random_data))+1):nrow(random_data),] #splitting the data
+
+fold_indices <- createFolds(training$work_hours, 10) # to keep fold composition the same (you told us this is recommended in slide 38)
+
+Methods <- c("lm","glmnet","ranger","xgbLinear") # to pull from these for the loop
 # You can ignore the bellow comments, this is just a reminder I left for myself for my pain, sadness and struggle.
 
 # lm_grid <- NULL
@@ -48,21 +52,21 @@ Methods <- c("lm","glmnet","ranger","xgbLinear")
                                           # alpha = seq(0, 1, by = 0.1),
                                           # eta = c(0.5, 1))
 # GRID <- c(lm_grid ,glmnet_grid,ranger_grid,xgbLinear_grid)
-testing <- list()
-Mygrid <- "thing"
+testing <- list() #a reset/satrting point
+Mygrid <- "thing" #a reset/satrting point
 for (i in 1:length(Methods)){
-  set.seed(2001)
+  set.seed(2001) #for reproducability
   if(i==1){
-    Mygrid <- NULL
+    Mygrid <- NULL #I tried having the tuneGrid= GRID[i] before (can see some of the code above and bellow), it didn't work and this was one of the eventual ways I got it to work. The null is because the LM hyper parameter is intercept=T which is the default setting
   } else if(i==2) {
-    Mygrid <- expand.grid(alpha = c(0, 1),
+    Mygrid <- expand.grid(alpha = c(0, 1), # took these values from the slides/datacamp
                           lambda = seq(0.0001, 0.1, length = 20))
   }else if(i==3) {
-    Mygrid <- expand.grid(mtry = c(2, 3, 4, 5, 10, 20, 50, 100), 
-                          splitrule = c("variance","extratrees"),
+    Mygrid <- expand.grid(mtry = c(2, 3, 4, 5, 10, 20, 50, 100), # took these values from the slides/datacamp
+                          splitrule = c("variance","extratrees"), # the model wasn't working for some reason, looked at other people to see how it could work, and adding the extratrees option fixed some of it (or I changed that while changing other things and they worked at the same time, at this point I can't remember, it was multiple hours of struggle and pain)
                           min.node.size = 5)
   }else if(i==4) {
-    Mygrid <-expand.grid(nrounds = seq(5, 50, by = 10),
+    Mygrid <-expand.grid(nrounds = seq(5, 50, by = 10),# took these values from online
                          lambda = c(0, 0.1, 2),
                          alpha = seq(0, 1, by = 0.1),
                          eta = c(0.5, 1))
@@ -71,49 +75,49 @@ for (i in 1:length(Methods)){
   model<- train(
     work_hours~.,
     data=training,
-    method= Methods[i],
-    preProcess= "medianImpute",
-    na.action= na.pass,
-    trControl = trainControl(method = "cv", 
-                             indexOut = fold_indices,
-                             number = 10,  
-                             verboseIter = TRUE),
-    tuneGrid = Mygrid
+    method= Methods[i], # can change the method so the loop works
+    preProcess= "medianImpute", # you wanted a median imputation
+    na.action= na.pass, #we have missing data so we need this
+    trControl = trainControl(method = "cv", #what you asked us to do
+                             indexOut = fold_indices, #slide 38
+                             number = 10,  #10 fold
+                             verboseIter = TRUE), # more detailed description
+    tuneGrid = Mygrid #the way I got it to actually work
   )
   
   testing[[Methods[i]]] <- list(
     model=model,
-    cv_rsq1 = max(model$results$Rsquared, na.rm = TRUE)
+    cv_rsq1 = max(model$results$Rsquared, na.rm = TRUE) # pulling out the k-fold r squares from the models and saving them somewhere
   )
   
   predictions <- predict(model, test, na.action = na.pass)
-  testing[[Methods[i]]]$ho_rsq1 <- cor(predictions, test$work_hours)^2
+  testing[[Methods[i]]]$ho_rsq1 <- cor(predictions, test$work_hours)^2 #calculating and HO r squares and saving them for later use
 }
 
 # Publication
 table1_tbl <- tibble(
-  algo= as.character(),
+  algo= as.character(), #template/ base tible
   cv_rsq=as.character(),
   ho_rsq=as.character()
 )
-i=1
+i=1 # this is just here because I was testing stuff (plus I think it's needed so I becomes a variable that recognisable, but that might not be the case, and is only the case when my loop is broke (which it isn't right now [figers crossed]))
 for (i in 1:length(Methods)){ 
-  cv_rsq <- str_remove(formatC(testing[[Methods[i]]]$cv_rsq1,
+  cv_rsq <- str_remove(formatC(testing[[Methods[i]]]$cv_rsq1, #formatting the k fold r squared
                                format = 'f', 
                                digits = 2),
                        "^0")
-  ho_rsq <- str_remove(formatC(testing[[Methods[i]]]$ho_rsq1,
+  ho_rsq <- str_remove(formatC(testing[[Methods[i]]]$ho_rsq1, #formatting the OH r squared
                                format = 'f', 
                                digits = 2),
                        "^0")
-  working <- tibble(
+  working <- tibble( # putting it in a tibble
     algo = Methods[i],
     cv_rsq = cv_rsq,
     ho_rsq = ho_rsq)
-  table1_tbl <- bind_rows(table1_tbl, working)
+  table1_tbl <- bind_rows(table1_tbl, working) #combining the tibbles across iterations
 }
 
-table1_tbl
+table1_tbl # double checked how it looks at the end
 
 
 #1) 
