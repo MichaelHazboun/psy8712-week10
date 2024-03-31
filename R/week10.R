@@ -38,7 +38,7 @@ test <-random_data[(round(0.75*nrow(random_data))+1):nrow(random_data),] #splitt
 
 fold_indices <- createFolds(training$work_hours, 10) # to keep fold composition the same (you told us this is recommended in slide 38)
 
-Methods <- c("lm","glmnet","ranger","xgbLinear") # to pull from these for the loop
+Methods <- c("lm","glmnet","ranger","xgbLinear") # to pull from these for the loop. Also, I used xgbLinear, because it had the smallest number of hyperparameters from the options on the website
 # You can ignore the bellow comments, this is just a reminder I left for myself for my pain, sadness and struggle.
 
 # lm_grid <- NULL
